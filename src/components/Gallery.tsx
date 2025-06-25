@@ -90,7 +90,7 @@ export const Gallery: React.FC<GalleryProps> = ({ className = '' }) => {
   }
 
   // Empty state
-  if (visualizations.length === 0) {
+  if (!visualizations || visualizations.length === 0) {
     return (
       <div className={`gallery-container ${className}`}>
         <div className="gallery-empty">

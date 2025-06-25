@@ -1,24 +1,25 @@
 import React from 'react';
-import logo from './logo.svg';
+import { Gallery } from './components/Gallery';
+import { AdminPanel } from './components/AdminPanel';
+import { Visualization } from './types/visualization';
 import './App.css';
 
 function App() {
+  // Handle new visualization generation
+  const handleVisualizationGenerated = (visualization: Visualization) => {
+    console.log('New visualization generated:', visualization);
+    // The Gallery component will automatically update through real-time listeners
+  };
+
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      {/* Main Gallery */}
+      <Gallery className="main-gallery" />
+      
+      {/* Admin Panel for Manual Generation */}
+      <AdminPanel 
+        onVisualizationGenerated={handleVisualizationGenerated}
+      />
     </div>
   );
 }
