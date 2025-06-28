@@ -21,13 +21,13 @@ export const Gallery: React.FC<GalleryProps> = ({ className = '' }) => {
         setError(null);
         
         // Get the 5 most recent visualizations
-        const data = await firestoreService.getVisualizations({
-          limit: 5,
-          sortBy: 'generatedAt',
-          sortOrder: 'desc'
-        });
+        const result = await firestoreService.getVisualizations(
+          {}, // filters
+          { field: 'generatedAt', direction: 'desc' }, // sort
+          5 // limit
+        );
         
-        setVisualizations(data);
+        setVisualizations(result.visualizations);
       } catch (err) {
         console.error('Error loading visualizations:', err);
         setError('Failed to load visualizations. Please try again later.');
@@ -40,7 +40,9 @@ export const Gallery: React.FC<GalleryProps> = ({ className = '' }) => {
     
     // Set up real-time listener for updates
     const unsubscribe = firestoreService.subscribeToVisualizations(
-      { limit: 5, sortBy: 'generatedAt', sortOrder: 'desc' },
+      {},
+      { field: 'generatedAt', direction: 'desc' },
+      5,
       (data) => {
         setVisualizations(data);
         setLoading(false);

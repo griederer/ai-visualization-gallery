@@ -1,29 +1,11 @@
 export interface Visualization {
   id: string;
-  title: string;
+  inspirationWord: string;
   description: string;
-  prompt: string;
-  code: string;
-  language: 'html' | 'javascript' | 'python' | 'react';
-  tags: string[];
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
-  category: string;
-  imageUrl?: string;
-  thumbnailUrl?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  author: {
-    id: string;
-    name: string;
-    email: string;
-  };
-  stats: {
-    views: number;
-    likes: number;
-    downloads: number;
-  };
-  isPublished: boolean;
-  isFeatured: boolean;
+  componentCode: string;
+  philosophicalTheme: string;
+  generatedAt: Date;
+  status: 'generating' | 'ready' | 'error';
 }
 
 export interface VisualizationFilter {
@@ -35,6 +17,12 @@ export interface VisualizationFilter {
 }
 
 export interface VisualizationSort {
-  field: 'createdAt' | 'views' | 'likes' | 'title';
+  field: 'generatedAt' | 'inspirationWord';
   direction: 'asc' | 'desc';
+}
+
+export interface VisualizationGenerationResult {
+  componentCode: string;
+  description: string;
+  philosophicalTheme: string;
 }

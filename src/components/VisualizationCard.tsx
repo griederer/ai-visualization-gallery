@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Visualization } from '../types/visualization';
+import DynamicVisualization from './DynamicVisualization';
 import './VisualizationCard.css';
 
 interface VisualizationCardProps {
@@ -13,11 +14,8 @@ export const VisualizationCard: React.FC<VisualizationCardProps> = ({
   index,
   className = ''
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number | null>(null);
-  const componentRef = useRef<any>(null);
   const [isInView, setIsInView] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(true); // DynamicVisualization handles its own loading
   const [error, setError] = useState<string | null>(null);
 
   // Intersection Observer for performance optimization
@@ -46,91 +44,9 @@ export const VisualizationCard: React.FC<VisualizationCardProps> = ({
     };
   }, []);
 
-  // Dynamic component loader and executor
-  const loadAndExecuteVisualization = useCallback(async () => {
-    if (!canvasRef.current || !isInView || !visualization.componentCode) return;
+  // DynamicVisualization component handles all rendering now
 
-    try {
-      setError(null);
-      setIsLoaded(false);
-
-      // Create a safe execution environment
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Cannot get 2D context');
-
-      // Set canvas size
-      canvas.width = 550;
-      canvas.height = 550;
-
-      // Parse and execute the generated component code
-      // This creates a safe sandbox for the AI-generated code
-      const componentFunction = new Function(
-        'canvas',
-        'ctx',
-        'React',
-        'useEffect',
-        'useRef',
-        `
-        ${visualization.componentCode}
-        
-        // Return the cleanup function if it exists
-        return typeof cleanup === 'function' ? cleanup : null;
-        `
-      );
-
-      // Execute the component with proper React hooks context
-      const cleanup = componentFunction(
-        canvas,
-        ctx,
-        React,
-        useEffect,
-        useRef
-      );
-
-      // Store cleanup function
-      componentRef.current = cleanup;
-      setIsLoaded(true);
-
-    } catch (err) {
-      console.error(`Error loading visualization "${visualization.inspirationWord}":`, err);
-      setError('Failed to load visualization');
-      
-      // Fallback: Draw a simple error state
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext('2d');
-      if (ctx && canvas) {
-        ctx.fillStyle = '#F0EEE6';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = '#ccc';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
-        
-        ctx.fillStyle = '#999';
-        ctx.font = '16px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Visualization Error', canvas.width / 2, canvas.height / 2);
-      }
-    }
-  }, [visualization.componentCode, isInView, visualization.inspirationWord]);
-
-  // Load visualization when in view
-  useEffect(() => {
-    if (isInView && visualization.status === 'ready') {
-      loadAndExecuteVisualization();
-    }
-
-    // Cleanup when component unmounts or goes out of view
-    return () => {
-      if (componentRef.current && typeof componentRef.current === 'function') {
-        componentRef.current();
-      }
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [isInView, loadAndExecuteVisualization, visualization.status]);
+  // DynamicVisualization component handles loading and rendering
 
   // Format date for display
   const formatDate = (date: Date) => {
@@ -162,15 +78,21 @@ export const VisualizationCard: React.FC<VisualizationCardProps> = ({
     }
 
     return (
-      <canvas
-        ref={canvasRef}
+      <div 
         className={`visualization-canvas ${isLoaded ? 'loaded' : 'loading'}`}
         style={{
           width: '100%',
           height: '100%',
-          objectFit: 'contain'
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}
-      />
+      >
+        <DynamicVisualization 
+          componentCode={visualization.componentCode}
+          inspirationWord={visualization.inspirationWord}
+        />
+      </div>
     );
   };
 

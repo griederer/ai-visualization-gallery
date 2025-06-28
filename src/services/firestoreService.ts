@@ -10,11 +10,11 @@ import {
   where,
   orderBy,
   limit,
-  startAfter,
+  onSnapshot,
   DocumentSnapshot,
   QueryConstraint,
   serverTimestamp,
-  increment
+  Unsubscribe
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from './firebase';
 import { Visualization, VisualizationFilter, VisualizationSort } from '../types/visualization';
@@ -30,38 +30,9 @@ export class FirestoreService {
     try {
       const constraints: QueryConstraint[] = [];
 
-      // Only show published visualizations by default
-      constraints.push(where('isPublished', '==', true));
-
-      // Apply filters
-      if (filters?.category) {
-        constraints.push(where('category', '==', filters.category));
-      }
-
-      if (filters?.tags && filters.tags.length > 0) {
-        constraints.push(where('tags', 'array-contains-any', filters.tags));
-      }
-
-      if (filters?.difficulty) {
-        constraints.push(where('difficulty', '==', filters.difficulty));
-      }
-
-      if (filters?.language) {
-        constraints.push(where('language', '==', filters.language));
-      }
-
-      // Apply sorting
-      if (sort) {
-        constraints.push(orderBy(sort.field, sort.direction));
-      } else {
-        constraints.push(orderBy('createdAt', 'desc'));
-      }
-
-      // Apply pagination
+      // Temporary: Get all documents without complex queries while indexes build
+      // Apply pagination only for now
       constraints.push(limit(limitCount));
-      if (lastDoc) {
-        constraints.push(startAfter(lastDoc));
-      }
 
       const q = query(collection(db, COLLECTIONS.VISUALIZATIONS), ...constraints);
       const querySnapshot = await getDocs(q);
@@ -71,20 +42,98 @@ export class FirestoreService {
 
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        visualizations.push({
+        const visualization = {
           id: doc.id,
           ...data,
-          createdAt: data.createdAt?.toDate(),
-          updatedAt: data.updatedAt?.toDate()
-        } as Visualization);
+          generatedAt: data.generatedAt?.toDate()
+        } as Visualization;
+        
+        // Filter ready visualizations on client side temporarily
+        if (visualization.status === 'ready') {
+          visualizations.push(visualization);
+        }
+        
         lastDocument = doc;
       });
+
+      // Sort on client side temporarily
+      if (sort) {
+        visualizations.sort((a, b) => {
+          const aValue = a[sort.field];
+          const bValue = b[sort.field];
+          
+          if (sort.direction === 'desc') {
+            return bValue > aValue ? 1 : -1;
+          } else {
+            return aValue > bValue ? 1 : -1;
+          }
+        });
+      } else {
+        visualizations.sort((a, b) => 
+          b.generatedAt.getTime() - a.generatedAt.getTime()
+        );
+      }
 
       return { visualizations, lastDoc: lastDocument };
     } catch (error) {
       console.error('Error getting visualizations:', error);
       throw error;
     }
+  }
+
+  // Subscribe to visualizations real-time updates
+  subscribeToVisualizations(
+    filters: VisualizationFilter | undefined,
+    sort: VisualizationSort | undefined,
+    limitCount: number,
+    onData: (visualizations: Visualization[]) => void,
+    onError: (error: Error) => void
+  ): Unsubscribe {
+    const constraints: QueryConstraint[] = [];
+
+    // Temporary: Simple query while indexes build
+    constraints.push(limit(limitCount * 2)); // Get more to filter on client
+
+    const q = query(collection(db, COLLECTIONS.VISUALIZATIONS), ...constraints);
+
+    return onSnapshot(
+      q,
+      (querySnapshot) => {
+        const allVisualizations: Visualization[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          allVisualizations.push({
+            id: doc.id,
+            ...data,
+            generatedAt: data.generatedAt?.toDate()
+          } as Visualization);
+        });
+        
+        // Filter and sort on client side temporarily
+        const readyVisualizations = allVisualizations
+          .filter(v => v.status === 'ready')
+          .sort((a, b) => {
+            if (sort) {
+              const aValue = a[sort.field];
+              const bValue = b[sort.field];
+              if (sort.direction === 'desc') {
+                return bValue > aValue ? 1 : -1;
+              } else {
+                return aValue > bValue ? 1 : -1;
+              }
+            } else {
+              return b.generatedAt.getTime() - a.generatedAt.getTime();
+            }
+          })
+          .slice(0, limitCount);
+          
+        onData(readyVisualizations);
+      },
+      (error) => {
+        console.error('Error in visualization subscription:', error);
+        onError(error);
+      }
+    );
   }
 
   // Get a single visualization by ID
@@ -98,8 +147,7 @@ export class FirestoreService {
         return {
           id: docSnap.id,
           ...data,
-          createdAt: data.createdAt?.toDate(),
-          updatedAt: data.updatedAt?.toDate()
+          generatedAt: data.generatedAt?.toDate()
         } as Visualization;
       }
 
@@ -111,14 +159,16 @@ export class FirestoreService {
   }
 
   // Create a new visualization
-  async createVisualization(visualization: Omit<Visualization, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  async createVisualization(visualization: Omit<Visualization, 'id'>): Promise<string> {
     try {
+      // Simplified: Just create the visualization without complex cleanup for now
+      // The cleanup will happen later when indexes are ready
       const docRef = await addDoc(collection(db, COLLECTIONS.VISUALIZATIONS), {
         ...visualization,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        generatedAt: serverTimestamp()
       });
 
+      // TODO: Add cleanup logic back when indexes are ready
       return docRef.id;
     } catch (error) {
       console.error('Error creating visualization:', error);
@@ -130,10 +180,7 @@ export class FirestoreService {
   async updateVisualization(id: string, updates: Partial<Visualization>): Promise<void> {
     try {
       const docRef = doc(db, COLLECTIONS.VISUALIZATIONS, id);
-      await updateDoc(docRef, {
-        ...updates,
-        updatedAt: serverTimestamp()
-      });
+      await updateDoc(docRef, updates);
     } catch (error) {
       console.error('Error updating visualization:', error);
       throw error;
@@ -150,120 +197,33 @@ export class FirestoreService {
       throw error;
     }
   }
-
-  // Increment view count
-  async incrementViews(id: string): Promise<void> {
-    try {
-      const docRef = doc(db, COLLECTIONS.VISUALIZATIONS, id);
-      await updateDoc(docRef, {
-        'stats.views': increment(1),
-        updatedAt: serverTimestamp()
-      });
-    } catch (error) {
-      console.error('Error incrementing views:', error);
-      throw error;
-    }
-  }
-
-  // Increment like count
-  async incrementLikes(id: string): Promise<void> {
-    try {
-      const docRef = doc(db, COLLECTIONS.VISUALIZATIONS, id);
-      await updateDoc(docRef, {
-        'stats.likes': increment(1),
-        updatedAt: serverTimestamp()
-      });
-    } catch (error) {
-      console.error('Error incrementing likes:', error);
-      throw error;
-    }
-  }
-
-  // Increment download count
-  async incrementDownloads(id: string): Promise<void> {
-    try {
-      const docRef = doc(db, COLLECTIONS.VISUALIZATIONS, id);
-      await updateDoc(docRef, {
-        'stats.downloads': increment(1),
-        updatedAt: serverTimestamp()
-      });
-    } catch (error) {
-      console.error('Error incrementing downloads:', error);
-      throw error;
-    }
-  }
-
-  // Search visualizations by title or description
-  async searchVisualizations(searchTerm: string, limitCount = 20): Promise<Visualization[]> {
-    try {
-      // Note: Firestore doesn't support full-text search natively
-      // This is a simplified version - consider using Algolia or similar for production
-      const constraints: QueryConstraint[] = [
-        where('isPublished', '==', true),
-        orderBy('createdAt', 'desc'),
-        limit(limitCount)
-      ];
-
-      const q = query(collection(db, COLLECTIONS.VISUALIZATIONS), ...constraints);
-      const querySnapshot = await getDocs(q);
-
-      const visualizations: Visualization[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const visualization = {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate(),
-          updatedAt: data.updatedAt?.toDate()
-        } as Visualization;
-
-        // Client-side filtering for search term
-        if (
-          visualization.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          visualization.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          visualization.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
-        ) {
-          visualizations.push(visualization);
-        }
-      });
-
-      return visualizations;
-    } catch (error) {
-      console.error('Error searching visualizations:', error);
-      throw error;
-    }
-  }
-
-  // Get featured visualizations
-  async getFeaturedVisualizations(limitCount = 6): Promise<Visualization[]> {
-    try {
-      const q = query(
-        collection(db, COLLECTIONS.VISUALIZATIONS),
-        where('isPublished', '==', true),
-        where('isFeatured', '==', true),
-        orderBy('createdAt', 'desc'),
-        limit(limitCount)
-      );
-
-      const querySnapshot = await getDocs(q);
-      const visualizations: Visualization[] = [];
-
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        visualizations.push({
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate(),
-          updatedAt: data.updatedAt?.toDate()
-        } as Visualization);
-      });
-
-      return visualizations;
-    } catch (error) {
-      console.error('Error getting featured visualizations:', error);
-      throw error;
-    }
-  }
 }
 
+// Export singleton instance
 export const firestoreService = new FirestoreService();
+
+// Helper function for subscribing to the latest visualization (for hero section)
+export const subscribeToLatestVisualization = (
+  callback: (visualization: Visualization | null) => void
+): () => void => {
+  const q = query(
+    collection(db, COLLECTIONS.VISUALIZATIONS),
+    limit(5) // Get a few and filter on client side
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    const visualizations = snapshot.docs
+      .map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          generatedAt: data.generatedAt?.toDate() || new Date()
+        } as Visualization;
+      })
+      .filter(vis => vis.status === 'ready') // Only ready visualizations
+      .sort((a, b) => b.generatedAt.getTime() - a.generatedAt.getTime());
+    
+    callback(visualizations.length > 0 ? visualizations[0] : null);
+  });
+};

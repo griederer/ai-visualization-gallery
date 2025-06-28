@@ -23,14 +23,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     const loadOldestVisualization = async () => {
       try {
-        const visualizations = await firestoreService.getVisualizations({
-          limit: 5,
-          sortBy: 'generatedAt',
-          sortOrder: 'asc'
-        });
+        const result = await firestoreService.getVisualizations(
+          {}, // filters
+          { field: 'generatedAt', direction: 'asc' }, // sort
+          5 // limit
+        );
         
-        if (visualizations && visualizations.length >= 5) {
-          setOldestVisualization(visualizations[0]);
+        if (result.visualizations && result.visualizations.length >= 5) {
+          setOldestVisualization(result.visualizations[0]);
         }
       } catch (err) {
         console.error('Error loading oldest visualization:', err);
@@ -87,19 +87,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       await firestoreService.updateVisualization(newVisualizationId, updatedVisualization);
 
-      // Step 4: Remove oldest visualization if we have more than 5
-      const currentVisualizations = await firestoreService.getVisualizations({
-        limit: 10,
-        sortBy: 'generatedAt',
-        sortOrder: 'asc'
-      });
-
-      if (currentVisualizations.length > 5) {
-        const visualizationsToDelete = currentVisualizations.slice(0, currentVisualizations.length - 5);
-        for (const viz of visualizationsToDelete) {
-          await firestoreService.deleteVisualization(viz.id);
-        }
-      }
+      // Step 4: Clean up - limit is handled automatically in createVisualization
 
       // Success!
       setGenerationStatus('Generation complete!');

@@ -1,179 +1,66 @@
-interface ClaudeMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
+import { VisualizationGenerationResult } from '../types/visualization';
+import { functions } from './firebase';
+import { httpsCallable } from 'firebase/functions';
 
-interface ClaudeResponse {
-  content: Array<{
-    type: 'text';
-    text: string;
-  }>;
-  id: string;
-  model: string;
-  role: 'assistant';
-  stop_reason: string;
-  stop_sequence: null;
-  type: 'message';
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-  };
-}
+// Firebase Functions for Claude API integration
+const generateVisualizationFunction = httpsCallable(functions, 'generateVisualizationV4');
+const testFunction = httpsCallable(functions, 'testFunction');
 
-export class ClaudeApiService {
-  private apiKey: string;
-  private apiUrl: string;
+// Test function to verify Firebase Functions connectivity
+export const testFirebaseConnection = async (): Promise<any> => {
+  try {
+    console.log('Testing Firebase Functions connection...');
+    const result = await testFunction({ test: 'hello' });
+    console.log('Test result:', result.data);
+    return result.data;
+  } catch (error) {
+    console.error('Test function error:', error);
+    throw error;
+  }
+};
 
-  constructor() {
-    this.apiKey = process.env.REACT_APP_CLAUDE_API_KEY || '';
-    this.apiUrl = process.env.REACT_APP_CLAUDE_API_URL || 'https://api.anthropic.com/v1/messages';
+// Generate visualization component code with Claude API via Firebase Functions
+export const generateVisualization = async (inspirationWord: string): Promise<VisualizationGenerationResult> => {
+  try {
+    // First test the connection
+    console.log('Testing connection before generation...');
+    await testFirebaseConnection();
     
-    if (!this.apiKey) {
-      console.warn('Claude API key not found. Please set REACT_APP_CLAUDE_API_KEY in your environment variables.');
+    console.log('Calling generateVisualization function...');
+    const result = await generateVisualizationFunction({ inspirationWord });
+    console.log('Generation result:', result.data);
+    const data = result.data as any;
+
+    if (!data.success) {
+      throw new Error(data.error || 'Generation failed');
     }
+
+    return {
+      componentCode: data.data.componentCode,
+      description: data.data.description,
+      philosophicalTheme: data.data.philosophicalTheme
+    };
+
+  } catch (error) {
+    console.error('Error generating visualization:', error);
+    throw new Error(`Failed to generate visualization: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+};
 
-  async generateVisualization(prompt: string): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error('Claude API key not configured');
-    }
+// Legacy methods for backward compatibility (not used in this app)
+export const improveVisualization = async (existingCode: string, improvementPrompt: string): Promise<VisualizationGenerationResult> => {
+  // This could be implemented as another Firebase Function if needed
+  throw new Error('Improvement feature not implemented yet');
+};
 
-    const messages: ClaudeMessage[] = [
-      {
-        role: 'user',
-        content: `Create a data visualization based on this prompt: "${prompt}". 
-        
-        Please respond with complete, executable code that includes:
-        1. HTML structure if needed
-        2. CSS styling
-        3. JavaScript/D3.js/Chart.js code for the visualization
-        4. Sample data if not provided
-        
-        Make sure the code is production-ready and includes proper error handling.
-        
-        Format your response as valid code that can be directly executed.`
-      }
-    ];
+export const explainVisualization = async (code: string): Promise<string> => {
+  // This could be implemented as another Firebase Function if needed
+  throw new Error('Explanation feature not implemented yet');
+};
 
-    try {
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-3-sonnet-20240229',
-          max_tokens: 4000,
-          messages: messages
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data: ClaudeResponse = await response.json();
-      return data.content[0]?.text || '';
-    } catch (error) {
-      console.error('Error calling Claude API:', error);
-      throw error;
-    }
-  }
-
-  async improveVisualization(existingCode: string, improvementPrompt: string): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error('Claude API key not configured');
-    }
-
-    const messages: ClaudeMessage[] = [
-      {
-        role: 'user',
-        content: `Please improve this existing visualization code based on the following request: "${improvementPrompt}"
-        
-        Existing code:
-        ${existingCode}
-        
-        Please provide the complete improved code, maintaining the same structure but implementing the requested improvements.`
-      }
-    ];
-
-    try {
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-3-sonnet-20240229',
-          max_tokens: 4000,
-          messages: messages
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data: ClaudeResponse = await response.json();
-      return data.content[0]?.text || '';
-    } catch (error) {
-      console.error('Error calling Claude API:', error);
-      throw error;
-    }
-  }
-
-  async explainVisualization(code: string): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error('Claude API key not configured');
-    }
-
-    const messages: ClaudeMessage[] = [
-      {
-        role: 'user',
-        content: `Please explain this data visualization code in simple terms:
-        
-        ${code}
-        
-        Include:
-        1. What type of visualization this is
-        2. What data it displays
-        3. Key features and interactions
-        4. How to customize it
-        
-        Keep the explanation beginner-friendly but comprehensive.`
-      }
-    ];
-
-    try {
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-3-sonnet-20240229',
-          max_tokens: 2000,
-          messages: messages
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data: ClaudeResponse = await response.json();
-      return data.content[0]?.text || '';
-    } catch (error) {
-      console.error('Error calling Claude API:', error);
-      throw error;
-    }
-  }
-}
-
-export const claudeApi = new ClaudeApiService();
+// Export a claudeApi object for compatibility
+export const claudeApi = {
+  generateVisualization,
+  improveVisualization,
+  explainVisualization
+};
